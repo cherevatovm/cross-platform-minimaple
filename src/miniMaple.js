@@ -1,19 +1,105 @@
+class Term {
+    constructor(coefficient = 1, variable = '', power = 0) {
+        this.coefficient = coefficient;
+        this.variable = variable;
+        this.power = power;
+    }
+
+    static parseFromString(termStr, sign, diffVariable) {
+        // Если терм является константой
+        if (!termStr.includes(diffVariable)) {
+            const coefficient = Term.parseCoefficient(termStr);
+            const signedCoefficient = sign === '-' ? -coefficient : coefficient;
+            return new Term(signedCoefficient, '', 0);
+        }
+
+        const parts = termStr.split(diffVariable);
+        const coefficientPart = parts[0] || '';
+        const powerPart = parts.slice(1).join(diffVariable);
+
+        const coefficient = Term.parseCoefficient(coefficientPart);
+        const power = Term.parsePower(powerPart);
+        
+        const signedCoefficient = sign === '-' ? -coefficient : coefficient;
+        return new Term(signedCoefficient, diffVariable, power);
+    }
+
+    static parseCoefficient(coefficientStr) {
+        if (!coefficientStr) return 1;
+        if (coefficientStr === '-') return -1;
+        if (coefficientStr === '+') return 1;
+        
+        const coefficient = parseFloat(coefficientStr.replace('*', ''));
+        return isNaN(coefficient) ? 1 : coefficient;
+    }
+
+    static parsePower(powerStr) {
+        if (!powerStr) return 1;
+        if (!powerStr.startsWith('^')) return 1;
+        
+        const power = parseFloat(powerStr.substring(1));
+        return isNaN(power) ? 1 : power;
+    }
+
+    differentiate(diffVariable) {
+        // Если терм не содржит переменную дифференцирования, то производная 0
+        if (this.variable !== diffVariable || this.power === 0) {
+            return null;
+        }
+
+        const newCoefficient = this.coefficient * this.power;
+        const newPower = this.power - 1;
+
+        if (newCoefficient === 0) {
+            return null;
+        }
+
+        return new Term(newCoefficient, this.variable, newPower);
+    }
+
+    toString() {
+        if (this.power === 0) {
+            return this.coefficient.toString();
+        }
+
+        let termStr = '';
+        
+        // Форматирование коэффициента
+        if (this.coefficient !== 1 && this.coefficient !== -1) {
+            termStr += this.coefficient;
+        } else if (this.coefficient === -1) {
+            termStr += '-';
+        }
+        
+        // Добавление переменной и знака умножения при необходимости
+        if (this.power > 0) {
+            if (termStr && termStr !== '-') {
+                termStr += '*';
+            }
+            termStr += this.variable;
+        }
+        
+        // Добавление степени
+        if (this.power > 1) {
+            termStr += `^${this.power}`;
+        }
+        
+        return termStr;
+    }
+}
+
 class MiniMaple {
     calculateDerivative(expression, variable) {
         const normExpr = expression.replace(/\s+/g, '');
-        const terms = this.parseTerms(normExpr);
-        const derivTerms = terms.map(term => {
-            const derivative = this.differentiateTerm(term.expression, variable);
-            return {
-                sign: term.sign,
-                expression: derivative
-            };
-        }).filter(term => term.expression !== '');
+        const terms = this.parseTerms(normExpr, variable);
         
-        return this.formatResult(derivTerms);
+        const derivTerms = terms.map(term => term.differentiate(variable))
+                              .filter(term => term !== null);
+        
+        return this.getResult(derivTerms);
     }
 
-    parseTerms(expression) {
+    parseTerms(expression, diffVariable) {
         if (!expression) return [];
         
         const terms = [];
@@ -24,7 +110,7 @@ class MiniMaple {
             const char = expression[i];
             
             if ((char === '+' || char === '-') && currentTerm !== '') {
-                terms.push({ sign, expression: currentTerm });
+                terms.push(Term.parseFromString(currentTerm, sign, diffVariable));
                 currentTerm = '';
                 sign = char;
             } else if (i === 0 && (char === '+' || char === '-')) {
@@ -35,86 +121,27 @@ class MiniMaple {
         }
         
         if (currentTerm) {
-            terms.push({ sign, expression: currentTerm });
+            terms.push(Term.parseFromString(currentTerm, sign, diffVariable));
         }
         
         return terms;
     }
 
-    differentiateTerm(term, variable) {
-        if (!term.includes(variable)) {
-            return '';
-        }
-
-        const parts = term.split(variable);
-        const [coefficientPart, powerPart] = [
-            parts[0] || '',
-            parts.slice(1).join(variable)
-        ];
-        const coefficient = this.parseCoefficient(coefficientPart);
-        const power = this.parsePower(powerPart);
-
-        return this.calculateDerivativeTerm(coefficient, power, variable);
-    }
-
-    parseCoefficient(coefficientStr) {
-        if (!coefficientStr) return 1;
-        if (coefficientStr === '-') return -1;
-        if (coefficientStr === '+') return 1;
-        
-        const coefficient = parseFloat(coefficientStr.replace('*', ''));
-        return isNaN(coefficient) ? 1 : coefficient;
-    }
-
-    parsePower(powerStr) {
-        if (!powerStr) return 1;
-        if (!powerStr.startsWith('^')) return 1;
-        
-        const power = parseFloat(powerStr.substring(1));
-        return isNaN(power) ? 1 : power;
-    }
-
-    calculateDerivativeTerm(coefficient, power, variable) {
-        const newCoefficient = coefficient * power;
-        const newPower = power - 1;
-
-        if (newCoefficient === 0) return '';
-
-        if (newPower === 0) {
-            return newCoefficient.toString();
-        }
-
-        let term = '';     
-        // Коэффициент
-        if (newCoefficient !== 1 && newCoefficient !== -1) {
-            term += newCoefficient;
-        } else if (newCoefficient === -1) {
-            term += '-';
-        }
-        // Переменная
-        if (newPower > 0) {
-            term += (term && term !== '-' ? '*' : '') + variable;
-        }
-        // Степень
-        if (newPower > 1) {
-            term += `^${newPower}`;
-        }
-        
-        return term;
-    }
-
-    formatResult(terms) {
+    getResult(terms) {
         if (terms.length === 0) return '0';
-        let result = ''; 
+        
+        let result = '';
         terms.forEach((term, index) => {
-            if (index === 0 && term.sign === '+') {
-                result += term.expression;
+            const termStr = term.toString();
+            if (index === 0) {
+                result += termStr;
             } else {
-                result += `${term.sign}${term.expression}`;
+                result += term.coefficient > 0 ? `+${termStr}` : termStr;
             }
         });
-        return result.trim() || '0';
+        
+        return result;
     }
 }
 
-export { MiniMaple };
+export { MiniMaple, Term };
